@@ -750,6 +750,7 @@ def PerformPostProcess(docSettings, setups):
 
                 cntSetups = 0
                 seqDict = dict()
+                pairs=[]
 
                 # We pass through all setups even if only some are selected
                 # so numbering scheme doesn't change.
@@ -757,14 +758,37 @@ def PerformPostProcess(docSettings, setups):
                     if progress.wasCancelled:
                         break
                     if not setup.isSuppressed and setup.allOperations.count != 0:
-                        nameList = setup.name.split(':')    # folder separator
+                        customReplace=setup.name.split('#')
+                        cnt = len(customReplace) - 1
+                        if cnt>0:
+                            i = 0
+                            while i < cnt:
+                                pair=ProcessPair(customReplace[i].strip())
+                                if len(pair) > 0:
+                                    pairs.append(pair)
+                                ui.messageBox("customReplace: {} pair:{}".format(customReplace, pair), 
+                                        constCmdName, 
+                                        adsk.core.MessageBoxButtonTypes.OKButtonType,
+                                        adsk.core.MessageBoxIconTypes.WarningIconType)
+                                i += 1
+                            if (i > 0):
+                                nameList=customReplace[i].split(':')    # folder separator
+                            else:
+                                ui.messageBox("Setup name '{}' missing actual name, found only '#' seperated sections".format(setup.name), 
+                                        constCmdName, 
+                                        adsk.core.MessageBoxButtonTypes.OKButtonType,
+                                        adsk.core.MessageBoxIconTypes.WarningIconType)
+                                return
+                        else:
+                            nameList = setup.name.split(':')    # folder separator
+
                         setupFolder = outputFolder
                         cnt = len(nameList) - 1
                         i = 0
                         while i < cnt:
                             setupFolder += "/" + nameList[i].strip()
                             i += 1
-                    
+
                         # keep a separate sequence number for each folder
                         if setupFolder in seqDict:
                             seqDict[setupFolder] += 1
@@ -803,7 +827,7 @@ def PerformPostProcess(docSettings, setups):
                                 fname = seqStr + ' ' + fname
 
                         # post the file
-                        status = PostProcessSetup(fname, setup, setupFolder, docSettings)
+                        status = PostProcessSetup(fname, setup, setupFolder, docSettings, pairs)
                         if status == None:
                             cntFiles += 1
                         else:
@@ -835,7 +859,14 @@ def PerformPostProcess(docSettings, setups):
         if ui:
             ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-def PostProcessSetup(fname, setup, setupFolder, docSettings):
+def ProcessPair(pair):
+    customReplace=pair.split('=')    
+    cnt = len(customReplace)
+    if cnt==2:
+        return [customReplace[0].strip(), customReplace[1].strip()]
+    return []
+
+def PostProcessSetup(fname, setup, setupFolder, docSettings, pairs):
     ui = None
     fileHead = None
     fileBody = None
@@ -892,6 +923,7 @@ def PostProcessSetup(fname, setup, setupFolder, docSettings):
             "(T(?P<T>[0-9]+))?" # Tool
             ".+)",              # to end of line
             re.IGNORECASE | re.DOTALL)
+        
         toolChange = docSettings["toolChange"]
         fToolChangeNum = False
         if len(toolChange) != 0:
@@ -1214,6 +1246,16 @@ def PostProcessSetup(fname, setup, setupFolder, docSettings):
                 if (fNum):
                     fileBody.write("N" + str(lineNum) + " ")
                     lineNum += constLineNumInc
+                
+                # custom replace
+                pair_cnt=len(pairs)
+                if pair_cnt>0:
+                    pair_idx = 0
+                    while pair_idx < pair_cnt:
+                        if len(pairs[pair_idx])==2 and line.find(pairs[pair_idx][0])!=-1:
+                            line=re.sub(pairs[pair_idx][0], pairs[pair_idx][1], line)
+                        pair_idx += 1
+                
                 fileBody.write(line)
                 lineFull = fileOp.readline()
                 if len(lineFull) == 0:
@@ -1286,3 +1328,4 @@ def PostProcessSetup(fname, setup, setupFolder, docSettings):
             retVal += " " + traceback.format_exc()
 
         return retVal
+
